@@ -32,10 +32,12 @@ def extract_frame(video_path: str, frame_idx: int):
 @app.post("/analyze")
 def analyze(
     goal_video: UploadFile = File(...),
-    current_video: UploadFile = File(None),
+    current_video: UploadFile = File(...),
     goal_frame_idx: int = Query(0, ge=0),
     current_frame_idx: int = Query(0, ge=0),
-    sampling_rate: int = Query(1, ge=1),
+    start_frame: int = Query(0, ge=0),
+    end_frameint=Query(0, ge=0),
+    frame_stepint=Query(1, ge=1),
     id: str = "untitled"
 ):
     tracker = EmissionsTracker()
