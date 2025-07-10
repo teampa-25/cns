@@ -7,6 +7,7 @@ import uvicorn
 import argparse
 import cv2
 import sys
+from codecarbon import EmissionsTracker
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from cns_external_images import run_cns_with_external_images
 
@@ -31,11 +32,15 @@ def extract_frame(video_path: str, frame_idx: int):
 @app.post("/analyze")
 def analyze(
     goal_video: UploadFile = File(...),
-    current_video: UploadFile = File(None),  # optional second video
+    current_video: UploadFile = File(None),
     goal_frame_idx: int = Query(0, ge=0),
     current_frame_idx: int = Query(0, ge=0),
+    sampling_rate: int = Query(1, ge=1),
     id: str = "untitled"
 ):
+    tracker = EmissionsTracker()
+    tracker.start()
+    
     goal_path = save_upload_to_tempfile(goal_video)
 
     if current_video is not None:
@@ -52,13 +57,16 @@ def analyze(
 
         vel, data, timing = run_cns_with_external_images(goal_img=goal_img, current_img=current_img, device=DEVICE, id=id, frame_idx=(goal_frame_idx, current_frame_idx))
 
+        emissions = tracker.stop()
+        
         if vel is None:
             raise HTTPException(status_code=400, detail="CNS pipeline failed")
 
         return JSONResponse({
             "velocity": vel.tolist() if hasattr(vel, "tolist") else vel,
             "timing": timing,
-            "data": str(data)
+            "data": str(data),
+            "carbon_footprint": emissions
         })
 
     finally:
