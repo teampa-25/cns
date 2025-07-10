@@ -66,6 +66,7 @@ def analyze(
             os.remove(goal_path)
         if current_video is not None and os.path.exists(curr_path):
             os.remove(curr_path)
+            
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--device", type=str, required=True, help="Device to run CNS on: 'cuda:0' or 'cpu'")
