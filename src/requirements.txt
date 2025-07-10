@@ -1,0 +1,15 @@
+tqdm
+numpy
+scipy
+fastapi
+uvicorn
+pybullet
+matplotlib
+tensorboard
+scikit_image
+open3d==0.16.0
+opencv_python>=4.5.4
+pyrealsense2==2.53.1.4623
+requests
+einops
+kornia
