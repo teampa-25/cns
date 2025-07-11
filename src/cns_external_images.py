@@ -47,7 +47,7 @@ def load_image(image_path):
     return img
 
 
-def run_cns_with_external_images(goal_image_path=None, current_image_path=None, goal_img=None, current_img=None, device=None, id="untitled", frame_idx=(0,0)):
+def run_cns_with_external_images(goal_image_path=None, current_image_path=None, goal_img=None, current_img=None, device=None, detector="AKAZE", id="untitled", frame_idx=(0,0)):
     """
     Run CNS pipeline with external images.
     Può accettare:
@@ -60,7 +60,7 @@ def run_cns_with_external_images(goal_image_path=None, current_image_path=None, 
         device = "cuda:0" if torch.cuda.is_available() else "cpu"
 
     pipeline = CorrespondenceBasedPipeline(
-        detector="AKAZE",
+        detector=detector,
         ckpt_path="../checkpoints/cns_state_dict.pth",
         intrinsic=CameraIntrinsic.default(),
         device=device,

@@ -6,6 +6,7 @@ Receives video files and performs velocity analysis using CNS pipeline.
 
 
 
+from enum import Enum
 import os
 import shutil
 import tempfile
@@ -21,6 +22,12 @@ import cv2
 from codecarbon import EmissionsTracker
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from cns_external_images import run_cns_with_external_images
+
+
+class DetectorEnum(str, Enum):
+    akaze = "AKAZE"
+    sift = "SIFT"
+    orb = "ORB"
 
 app = FastAPI(
     title="CNS Video Analysis API",
@@ -92,19 +99,11 @@ def extract_frame(video_path: str, frame_idx: int):
             cap.release()
 
 
-@app.get("/health")
-async def health_check():
-    """Health check endpoint."""
-    return {
-        "status": "healthy",
-        "message": "CNS server is running"
-    }
-
-
 @app.post("/analyze")
 async def analyze(
     id: str = Query("untitled", description="Request identifier"),
     device: str = Query("cuda:0", description="Device to run CNS on: 'cuda:0' or 'cpu'"),
+    detector: DetectorEnum = Query("AKAZE", description="Feature extractor algorithm: AKAZE, SIFT or ORB"),
     goal_video: UploadFile = File(..., description="Goal video file"),
     current_video: Optional[UploadFile] = File(None, description="Current video file (optional)"),
     goal_frame_idx: int = Query(0, ge=0, description="Frame index to extract from goal video"),
@@ -119,8 +118,7 @@ async def analyze(
     Args:
         id: Request identifier (default: "untitled")
         device: Device to run CNS on (default cuda:0)
-        detector: ??
-        vis: ??
+        detector: Feature extractor algorithm: AKAZE, SIFT or ORB (default AKAZE)
         goal_video: The goal video file (required)
         current_video: The current video file (optional, will use goal_video if not provided)
         goal_frame_idx: Frame index for goal video (default: 0)
@@ -142,7 +140,6 @@ async def analyze(
     current_frame_idx = 0
     response_data = [{}]
     
-
     try:
         # Validate uploaded files
         if not goal_video.filename:
@@ -150,20 +147,20 @@ async def analyze(
                 status_code=400, detail="Goal video filename is required")
 
         # Check file types
-        allowed_extensions = ['.mp4']
+        allowed_extension = '.mp4'
         goal_ext = os.path.splitext(goal_video.filename)[1].lower()
-        if goal_ext not in allowed_extensions:
+        if goal_ext not in allowed_extension:
             raise HTTPException(
                 status_code=400,
-                detail=f"Unsupported file format: {goal_ext}. Supported formats: {allowed_extensions}"
+                detail=f"Unsupported file format: {goal_ext}. Supported formats: {allowed_extension}"
             )
 
         if current_video and current_video.filename:
             curr_ext = os.path.splitext(current_video.filename)[1].lower()
-            if curr_ext not in allowed_extensions:
+            if curr_ext not in allowed_extension:
                 raise HTTPException(
                     status_code=400,
-                    detail=f"Unsupported file format: {curr_ext}. Supported formats: {allowed_extensions}"
+                    detail=f"Unsupported file format: {curr_ext}. Supported formats: {allowed_extension}"
                 )
 
         print(f"[INFO] Processing request ID: {id}")
@@ -182,24 +179,24 @@ async def analyze(
             print(
                 f"[INFO] Using goal video as current video (frame {current_frame_idx})")
             
+        goal_img = extract_frame(goal_path, goal_frame_idx) 
+         
         for current_frame_idx in range(start_frame, end_frame, frame_step):
-            # Extract frames
-            print(f"[INFO] Extracting frames...")
-            goal_img = extract_frame(goal_path, goal_frame_idx)
+            # Extract frames from current video
+            print(f"[INFO] Extracting frames...")    
             current_img = extract_frame(curr_path, current_frame_idx)
-
             if goal_img is None or current_img is None:
                 raise HTTPException(
                     status_code=400, detail="Failed to extract valid frames")
-
             print(f"[INFO] Frames extracted successfully")
 
             # Run CNS analysis
             print(f"[INFO] Running CNS analysis on device: {device}")
-            vel, data, timing = run_cns_with_external_images(
+            vel = run_cns_with_external_images(
                 goal_img=goal_img,
                 current_img=current_img,
                 device=device,
+                detector=detector,
                 id=id,
                 frame_idx=(goal_frame_idx, current_frame_idx)
             )
@@ -209,12 +206,6 @@ async def analyze(
             
             response_data.append({
                 "velocity": vel.tolist() if hasattr(vel, "tolist") else vel,
-                "timing": timing,
-                "data": str(data),
-                "frames": {
-                    "goal_frame_idx": goal_frame_idx,
-                    "current_frame_idx": current_frame_idx
-                },
             })
 
         # Stop emissions tracking
@@ -224,11 +215,7 @@ async def analyze(
         # Prepare response
         response_data.append({
             "request_id": id,
-            "carbon_footprint": emissions,
-            "parameters": {
-                "sampling_rate": frame_step,
-                "device": device
-            }
+            "carbon_footprint": emissions
         })
 
         print(f"[INFO] Request {id} completed successfully")
