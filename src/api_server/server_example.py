@@ -14,12 +14,13 @@ from typing import Optional, Union
 from fastapi import FastAPI, File, UploadFile, HTTPException, Query
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
-from cns_external_images import run_cns_with_external_images
+
 import uvicorn
 import sys
 import cv2
 from codecarbon import EmissionsTracker
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from cns_external_images import run_cns_with_external_images
 
 app = FastAPI(
     title="CNS Video Analysis API",
