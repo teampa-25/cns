@@ -32,17 +32,9 @@ RUN pip install --upgrade pip && \
     pip install torch-geometric && \
     pip install tqdm "numpy<2" scipy pybullet matplotlib tensorboard scikit-image open3d>=0.16.0 opencv-python>=4.8.0 pyrealsense2==2.53.1.4623
 
-# Clone YCB models repo for optional simulation environment
-# RUN mkdir -p cns/thirdparty && \
-#     cd cns/thirdparty && \
-#     git clone https://github.com/eleramp/pybullet-object-models.git
-
-# Clone SuperGlue pretrained network (optional)
-# RUN cd cns/thirdparty/SuperGluePretrainedNetwork && python3 prepare_superglue.py
-
 
 # Espone la porta 8000
-# EXPOSE 8000
+ EXPOSE 8000
 
 # Avvia il server FastAPI con device selezionabile (default cpu, puoi cambiare in docker run)
 # CMD ["python", "main.py", "--device", "cpu"]
