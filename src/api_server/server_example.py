@@ -5,14 +5,14 @@ Receives video files and performs velocity analysis using CNS pipeline.
 """
 
 
-
+from cns_external_images import run_cns_with_external_images
 from enum import Enum
 import os
 import shutil
 import tempfile
 import traceback
-from typing import Optional, Union
-from fastapi import FastAPI, File, UploadFile, HTTPException, Query
+from typing import Optional
+from fastapi import FastAPI, File, UploadFile, HTTPException, Query, Form
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -21,13 +21,13 @@ import sys
 import cv2
 from codecarbon import EmissionsTracker
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from cns_external_images import run_cns_with_external_images
 
 
 class DetectorEnum(str, Enum):
     akaze = "AKAZE"
     sift = "SIFT"
     orb = "ORB"
+
 
 app = FastAPI(
     title="CNS Video Analysis API",
@@ -43,6 +43,7 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
 
 def save_upload_to_tempfile(upload_file: UploadFile) -> str:
     """Save uploaded file to a temporary file and return the path."""
@@ -101,20 +102,19 @@ def extract_frame(video_path: str, frame_idx: int):
 
 @app.post("/analyze")
 async def analyze(
-    id: str = Query("untitled", description="Request identifier"),
-    device: str = Query("cuda:0", description="Device to run CNS on: 'cuda:0' or 'cpu'"),
-    detector: DetectorEnum = Query("AKAZE", description="Feature extractor algorithm: AKAZE, SIFT or ORB"),
+    id: str = Form("untitled", description="Request identifier"),
+    device: str = Form("cuda:0", description="Device to run CNS on: 'cuda:0' or 'cpu'"),
+    detector: DetectorEnum = Form("AKAZE", description="Feature extractor algorithm: AKAZE, SIFT or ORB"),
     goal_video: UploadFile = File(..., description="Goal video file"),
     current_video: Optional[UploadFile] = File(None, description="Current video file (optional)"),
-    goal_frame_idx: int = Query(0, ge=0, description="Frame index to extract from goal video"),
-    frame_step: int = Query( 1, ge=1, description="Sampling rate for processing"),
-    start_frame: int = Query(0, ge=0, description="Frame to start the process"),
-    end_frame:int=Query(0, ge=100, description="Frame to finish the process"),
-    
+    goal_frame_idx: int = Form(0, ge=0, description="Frame index to extract from goal video"),
+    frame_step: int = Form(1, ge=1, description="Sampling rate for processing"),
+    start_frame: int = Form(0, ge=0, description="Frame to start the process"),
+    end_frame: int = Form(0, ge=100, description="Frame to finish the process")
 ):
     """
     Analyze video frames using CNS pipeline.
-    
+
     Args:
         id: Request identifier (default: "untitled")
         device: Device to run CNS on (default cuda:0)
@@ -125,10 +125,10 @@ async def analyze(
         frame_step: Sampling rate for processing (default: 1)
         start_frame: Frame to start the process (default: 0)
         end_frame: Frame to finish the process (default: 100)
-       
-    
+
+
     Returns:
-        JSON response with velocity, timing, and carbon footprint data
+        JSON response with velocity and carbon footprint data
     """
 
     # Initialize emissions tracker
@@ -139,7 +139,7 @@ async def analyze(
     curr_path = None
     current_frame_idx = 0
     response_data = [{}]
-    
+
     try:
         # Validate uploaded files
         if not goal_video.filename:
@@ -164,7 +164,8 @@ async def analyze(
                 )
 
         print(f"[INFO] Processing request ID: {id}")
-        print(f"[INFO] Goal video: {goal_video.filename} (frame {goal_frame_idx})")
+        print(
+            f"[INFO] Goal video: {goal_video.filename} (frame {goal_frame_idx})")
 
         # Save goal video to temporary file
         goal_path = save_upload_to_tempfile(goal_video)
@@ -178,12 +179,12 @@ async def analyze(
             curr_path = goal_path  # Use same video for current
             print(
                 f"[INFO] Using goal video as current video (frame {current_frame_idx})")
-            
-        goal_img = extract_frame(goal_path, goal_frame_idx) 
-         
+
+        goal_img = extract_frame(goal_path, goal_frame_idx)
+
         for current_frame_idx in range(start_frame, end_frame, frame_step):
             # Extract frames from current video
-            print(f"[INFO] Extracting frames...")    
+            print(f"[INFO] Extracting frames...")
             current_img = extract_frame(curr_path, current_frame_idx)
             if goal_img is None or current_img is None:
                 raise HTTPException(
@@ -200,10 +201,11 @@ async def analyze(
                 id=id,
                 frame_idx=(goal_frame_idx, current_frame_idx)
             )
-            
+
             if vel is None:
-                raise HTTPException(status_code=500, detail="CNS pipeline failed to produce results")
-            
+                raise HTTPException(
+                    status_code=500, detail="CNS pipeline failed to produce results")
+
             response_data.append({
                 "velocity": vel.tolist() if hasattr(vel, "tolist") else vel,
             })
