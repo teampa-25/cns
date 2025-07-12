@@ -80,12 +80,9 @@ def run_cns_with_external_images(goal_image_path=None, current_image_path=None, 
                 current_image_path = "dataset_small/curr3.jpeg"
             print(f"[INFO] Loading current image: {current_image_path}")
             current_img = load_image(current_image_path)
-        print(f"[INFO] Goal image shape: {goal_img.shape}")
-        print(f"[INFO] Current image shape: {current_img.shape}")
+
         dist_scale = 1.0
         pipeline.set_target(goal_img, dist_scale=dist_scale)
-        print("[INFO] Processing images with CNS pipeline...")
-
         vel, data, timing = pipeline.get_control_rate(current_img, id=id, frame_idx=frame_idx)
 
         print("\n" + "="*60)
@@ -94,23 +91,23 @@ def run_cns_with_external_images(goal_image_path=None, current_image_path=None, 
         if data is not None:
             print(f"[SUCCESS] Pipeline execution successful")
             print(f"[INFO] Velocity output shape: {vel.shape if hasattr(vel, 'shape') else type(vel)}")
-            print(f"[INFO] Velocity values: {vel}")
-            print(f"[INFO] Timing information: {timing}")
-            if hasattr(data, 'keys'):
-                print(f"[INFO] Data keys: {list(data.keys())}")
-            results = {
-                "velocity": convert_to_json_serializable(vel),
-                "data": convert_to_json_serializable(data),
-                "timing": convert_to_json_serializable(timing),
-                "goal_image_shape": list(goal_img.shape),
-                "current_image_shape": list(current_img.shape),
-                "device_used": "cuda:0" if torch.cuda.is_available() else "cpu",
-                "detector": "AKAZE"
-            }
-            output_file = "cns_external_results.json"
-            with open(output_file, 'w') as f:
-                json.dump(results, f, indent=2)
-            print(f"[INFO] Results saved to {output_file}")
+            #print(f"[INFO] Velocity values: {vel}")
+            #print(f"[INFO] Timing information: {timing}")
+            #if hasattr(data, 'keys'):
+                #print(f"[INFO] Data keys: {list(data.keys())}")
+            # results = {
+            #     "velocity": convert_to_json_serializable(vel),
+            #     #"data": convert_to_json_serializable(data),
+            #     #"timing": convert_to_json_serializable(timing),
+            #     #"goal_image_shape": list(goal_img.shape),
+            #     #"current_image_shape": list(current_img.shape),
+            #     "device_used": device,
+            #     "detector": detector
+            # }
+            # output_file = "cns_external_results.json"
+            # with open(output_file, 'w') as f:
+            #     json.dump(results, f, indent=2)
+            # print(f"[INFO] Results saved to {output_file}")
         else:
             print("[ERROR] Pipeline returned None data - processing failed")
             print("This could indicate:")

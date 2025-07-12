@@ -1,4 +1,28 @@
+"""
+FastAPI server for CNS video analysis.
+Receives video files and performs velocity analysis using CNS pipeline.
+"""
+
+import uuid
 import numpy as np
+from enum import Enum
+import os
+import shutil
+import tempfile
+import traceback
+from typing import Optional
+from fastapi import FastAPI, File, UploadFile, HTTPException, Query, Form
+from fastapi.responses import JSONResponse
+from fastapi.middleware.cors import CORSMiddleware
+import uvicorn
+import asyncio
+import sys
+import cv2
+from codecarbon import EmissionsTracker
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from cns_external_images import run_cns_with_external_images
+
+
 """
 Utility to recursively convert all numpy ndarrays to lists
 Placed at module level to avoid UnboundLocalError.
@@ -15,34 +39,13 @@ def convert_ndarray(obj):
     else:
         return obj
 
-"""
-FastAPI server for CNS video analysis.
-Receives video files and performs velocity analysis using CNS pipeline.
-"""
-
-from enum import Enum
-import os
-import shutil
-import tempfile
-import traceback
-from typing import Optional
-from fastapi import FastAPI, File, UploadFile, HTTPException, Query, Form
-from fastapi.responses import JSONResponse
-from fastapi.middleware.cors import CORSMiddleware
-
-import uvicorn
-import sys
-import cv2
-from codecarbon import EmissionsTracker
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from cns_external_images import run_cns_with_external_images
-
 
 class DetectorEnum(str, Enum):
     akaze = "AKAZE"
     sift = "SIFT"
     orb = "ORB"
-
+    
+semaphore = asyncio.Semaphore(2)
 
 app = FastAPI(
     title="CNS Video Analysis API",
@@ -113,11 +116,11 @@ def extract_frame(video_path: str, frame_idx: int):
     finally:
         if cap is not None:
             cap.release()
-
+            
 
 @app.post("/analyze")
 async def analyze(
-    id: str = Form("untitled", description="Request identifier"),
+    jobId: str = Form("untitled", description="Job identifier from Bull"),
     device: str = Form("cuda:0", description="Device to run CNS on: 'cuda:0' or 'cpu'"),
     detector: DetectorEnum = Form("AKAZE", description="Feature extractor algorithm: AKAZE, SIFT or ORB"),
     goal_video: UploadFile = File(..., description="Goal video file"),
@@ -131,7 +134,7 @@ async def analyze(
     Analyze video frames using CNS pipeline.
 
     Args:
-        id: Request identifier (default: "untitled")
+        jobId: Job identifier from Bull (default: "untitled")
         device: Device to run CNS on (default cuda:0)
         detector: Feature extractor algorithm: AKAZE, SIFT or ORB (default AKAZE)
         goal_video: The goal video file (required)
@@ -141,144 +144,146 @@ async def analyze(
         start_frame: Frame to start the process (default: 0)
         end_frame: Frame to finish the process (default: 100)
 
-
     Returns:
         JSON response with velocity and carbon footprint data
     """
+    
+    async with semaphore:
 
+        # Initialize emissions tracker
+        tracker = EmissionsTracker(
+            save_to_file = True,
+            output_dir = "emissions",
+            output_file=f"{jobId}.json"
+        )
+        tracker_started = False
+        try:
+            tracker.start()
+            tracker_started = True
+        except Exception as e:
+            print(f"[WARNING] Could not start EmissionsTracker: {e}")
 
-    # Initialize emissions tracker
-    tracker = EmissionsTracker()
-    tracker_started = False
-    try:
-        tracker.start()
-        tracker_started = True
-    except Exception as e:
-        print(f"[WARNING] Could not start EmissionsTracker: {e}")
+        goal_path = None
+        curr_path = None
+        current_frame_idx = 0
+        response_data = [{}]
 
-    goal_path = None
-    curr_path = None
-    current_frame_idx = 0
-    response_data = [{}]
+        try:
+            # Validate uploaded files
+            if not goal_video.filename:
+                raise HTTPException(
+                    status_code=400, detail="Goal video filename is required")
 
-    try:
-        # Validate uploaded files
-        if not goal_video.filename:
-            raise HTTPException(
-                status_code=400, detail="Goal video filename is required")
-
-        # Check file types
-        allowed_extension = '.mp4'
-        goal_ext = os.path.splitext(goal_video.filename)[1].lower()
-        if goal_ext not in allowed_extension:
-            raise HTTPException(
-                status_code=400,
-                detail=f"Unsupported file format: {goal_ext}. Supported formats: {allowed_extension}"
-            )
-
-        if current_video and current_video.filename:
-            curr_ext = os.path.splitext(current_video.filename)[1].lower()
-            if curr_ext not in allowed_extension:
+            # Check file types
+            allowed_extension = '.mp4'
+            goal_ext = os.path.splitext(goal_video.filename)[1].lower()
+            if goal_ext not in allowed_extension:
                 raise HTTPException(
                     status_code=400,
-                    detail=f"Unsupported file format: {curr_ext}. Supported formats: {allowed_extension}"
+                    detail=f"Unsupported file format: {goal_ext}. Supported formats: {allowed_extension}"
                 )
 
-        print(f"[INFO] Processing request ID: {id}")
-        print(
-            f"[INFO] Goal video: {goal_video.filename} (frame {goal_frame_idx})")
+            if current_video and current_video.filename:
+                curr_ext = os.path.splitext(current_video.filename)[1].lower()
+                if curr_ext not in allowed_extension:
+                    raise HTTPException(
+                        status_code=400,
+                        detail=f"Unsupported file format: {curr_ext}. Supported formats: {allowed_extension}"
+                    )
 
-        # Save goal video to temporary file
-        goal_path = save_upload_to_tempfile(goal_video)
-        print(f"[INFO] Goal video saved to: {goal_path}")
+            print(f"[INFO] Processing request ID: {jobId}")
+            print(f"[INFO] Goal video: {goal_video.filename} (frame {goal_frame_idx})")
 
-        # Handle current video
-        if current_video and current_video.filename:
-            curr_path = save_upload_to_tempfile(current_video)
-            print(f"[INFO] Current video saved to: {curr_path}")
-        else:
-            curr_path = goal_path  # Use same video for current
-            print(
-                f"[INFO] Using goal video as current video (frame {current_frame_idx})")
+            # Save goal video to temporary file
+            goal_path = save_upload_to_tempfile(goal_video)
+            print(f"[DEBUG] Goal video saved to: {goal_path}")
 
-        goal_img = extract_frame(goal_path, goal_frame_idx)
+            # Handle current video
+            if current_video and current_video.filename:
+                curr_path = save_upload_to_tempfile(current_video)
+                print(f"[DEBUG] Current video saved to: {curr_path}")
+            else:
+                curr_path = goal_path  # Use same video for current
+                print(
+                    f"[DEBUG] Using goal video as current video (frame {current_frame_idx})")
 
-        for current_frame_idx in range(start_frame, end_frame, frame_step):
-            # Extract frames from current video
-            print(f"[INFO] Extracting frames...")
-            current_img = extract_frame(curr_path, current_frame_idx)
-            if goal_img is None or current_img is None:
-                raise HTTPException(
-                    status_code=400, detail="Failed to extract valid frames")
-            print(f"[INFO] Frames extracted successfully")
+            goal_img = extract_frame(goal_path, goal_frame_idx)
 
-            # Run CNS analysis
-            print(f"[INFO] Running CNS analysis on device: {device}")
-            vel = run_cns_with_external_images(
-                goal_img=goal_img,
-                current_img=current_img,
-                device=device,
-                detector=detector,
-                id=id,
-                frame_idx=(goal_frame_idx, current_frame_idx)
-            )
+            print(f"[INFO] Running CNS analysis with detector {detector} on device: {device}")
+            for current_frame_idx in range(start_frame, end_frame, frame_step):
+                # Extract frames from current video
+                print(f"[INFO] Extracting frames...")
+                current_img = extract_frame(curr_path, current_frame_idx)
+                if goal_img is None or current_img is None:
+                    raise HTTPException(status_code=400, detail="Failed to extract valid frames")
+                print(f"[INFO] Frames extracted successfully")
 
-            if vel is None:
-                raise HTTPException(
-                    status_code=500, detail="CNS pipeline failed to produce results")
+                # Run CNS analysis
+                vel = run_cns_with_external_images(
+                    goal_img=goal_img,
+                    current_img=current_img,
+                    device=device,
+                    detector=detector,
+                    id=jobId,
+                    frame_idx=(goal_frame_idx, current_frame_idx)
+                )
 
-            # Convert velocity to list format for JSON serialization
-            velocity = convert_ndarray(vel)
-            response_data.append({
-                "velocity": velocity,
-            })
+                if vel is None:
+                    raise HTTPException(
+                        status_code=500, detail="CNS pipeline failed to produce results")
 
-        # Prepare response (emissions will be added in finally)
-        print(f"[INFO] Request {id} completed successfully")
-        
-        # Convert all numpy arrays to lists before returning
-        response_data_clean = convert_ndarray(response_data)
-        print(f"[DEBUG] Response data after conversion: {type(response_data_clean)}")
-        
-        return JSONResponse(content=response_data_clean)
+                # Convert velocity to list format for JSON serialization
+                velocity = convert_ndarray(vel)
+                response_data.append({
+                    "velocity": velocity,
+                })
 
-    except HTTPException:
-        # Re-raise HTTP exceptions
-        raise
-    except Exception as e:
-        print(f"[ERROR] Unexpected error in analysis: {str(e)}")
-        print(f"[ERROR] Traceback: {traceback.format_exc()}")
-        raise HTTPException(
-            status_code=500, detail=f"Internal server error: {str(e)}")
+            # Prepare response (emissions will be added in finally)
+            print(f"[INFO] CNS Pipeline completed successfully")
 
-    finally:
-        # Stop emissions tracking if started
-        emissions = None
-        if 'tracker' in locals() and tracker_started:
-            try:
-                emissions = tracker.stop()
-                print(f"[INFO] Emissions tracking stopped. Emissions: {emissions}")
-            except Exception as e:
-                print(f"[WARNING] Could not stop EmissionsTracker: {e}")
-        # Add emissions info to response if available
-        if emissions is not None:
-            response_data.append({
-                "request_id": id,
-                "carbon_footprint": convert_ndarray(emissions)
-            })
-        # Clean up temporary files
-        cleanup_files = []
-        if goal_path and os.path.exists(goal_path):
-            cleanup_files.append(goal_path)
-        if curr_path and curr_path != goal_path and os.path.exists(curr_path):
-            cleanup_files.append(curr_path)
+        except HTTPException:
+            # Re-raise HTTP exceptions
+            raise
+        except Exception as e:
+            print(f"[ERROR] Unexpected error in analysis: {str(e)}")
+            print(f"[ERROR] Traceback: {traceback.format_exc()}")
+            raise HTTPException(
+                status_code=500, detail=f"Internal server error: {str(e)}")
 
-        for file_path in cleanup_files:
-            try:
-                os.remove(file_path)
-                print(f"[INFO] Cleaned up temporary file: {file_path}")
-            except Exception as e:
-                print(f"[WARNING] Failed to clean up {file_path}: {str(e)}")
+        finally:
+            emissions = None
+            if 'tracker' in locals() and tracker_started:
+                try:
+                    emissions = tracker.stop()      
+                    print(
+                        f"[INFO] Carbon emissions for request {jobId}: {float(emissions):.6f} kg CO₂eq")
+                except Exception as e:
+                    print(f"[WARNING] Could not stop EmissionsTracker: {e}")
+
+            if emissions is not None:
+                format_emissions = round(float(emissions), 6)
+                response_data.append({
+                    "request_id": jobId,
+                    "carbon_footprint": format_emissions
+                })
+                
+            # Clean up temporary files
+            cleanup_files = []
+            if goal_path and os.path.exists(goal_path):
+                cleanup_files.append(goal_path)
+            if curr_path and curr_path != goal_path and os.path.exists(curr_path):
+                cleanup_files.append(curr_path)
+
+            for file_path in cleanup_files:
+                try:
+                    os.remove(file_path)
+                    print(f"[INFO] Cleaned up temporary file: {file_path}")
+                except Exception as e:
+                    print(f"[WARNING] Failed to clean up {file_path}: {str(e)}")
+                    
+            response_data_clean = convert_ndarray(response_data)
+            print(f"[DEBUG] Response data after conversion: {type(response_data_clean)}")       
+            return JSONResponse(content=response_data_clean)
 
 
 @app.exception_handler(HTTPException)
