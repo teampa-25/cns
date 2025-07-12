@@ -1,7 +1,7 @@
 #!/bin/bash
 
-IMAGE_NAME="bam-cns-server"
-CONTAINER_NAME="bam-cns-server"
+IMAGE_NAME="humungous-cns"
+CONTAINER_NAME="humungous-cns"
 DOCKERFILE_NAME="Dockerfile"
 
 # Check if image exists
@@ -19,22 +19,9 @@ if docker ps -a --format '{{.Names}}' | grep -q "^${CONTAINER_NAME}$"; then
 fi
 
 # Run the container
-docker run -it -d \
-    --name "$CONTAINER_NAME" \
-    --network bam \
-    -e DISPLAY="$DISPLAY" \
-    -v "$HOME/.Xauthority:/root/.Xauthority:ro" \
-    -v "/tmp/.X11-unix:/tmp/.X11-unix:rw" \
-    --privileged \
-    --runtime=nvidia \
-    --gpus all \
-    -v "$(pwd):/workspace" \
-    -v "$HOME/.tmp:/tmp-video/" \
-    -w /workspace \
-    -p 8000:8990 \
-    "$IMAGE_NAME"
+docker run --gpus all -it  --runtime=nvidia  -v "$(pwd):/workspace" --workdir /workspace -p 8000:8000 "$IMAGE_NAME" bash -c "apt update && apt install -y dos2unix && dos2unix src/CNS_venv/bin/activate && source src/CNS_venv/bin/activate && bash"
 
 # Connect to the container
 echo "🔗 Connecting to container..."
-# echo "⚠️  REMEMBER TO RUN: source setup.fish INSIDE THE CONTAINER"
+# echo "  yay "
 docker exec -it "$CONTAINER_NAME" bash

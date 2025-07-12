@@ -184,8 +184,15 @@ async def analyze(
                         status_code=400,
                         detail=f"Unsupported file format: {curr_ext}. Supported formats: {allowed_extension}"
                     )
-            
-            current_total_frames = get_total_frames(current_video)
+                
+                # Save current video to temp file first
+                curr_path = save_upload_to_tempfile(current_video)
+                current_total_frames = get_total_frames(curr_path)
+            else:
+                # Use goal video as current video
+                goal_path = save_upload_to_tempfile(goal_video)
+                current_total_frames = get_total_frames(goal_path)
+                curr_path = goal_path
                     
             if start_frame >= end_frame:
                 raise HTTPException(
@@ -206,14 +213,11 @@ async def analyze(
             goal_path = save_upload_to_tempfile(goal_video)
             print(f"[DEBUG] Goal video saved to: {goal_path}")
 
-            # Handle current video
+            # Handle current video (curr_path already set above)
             if current_video and current_video.filename:
-                curr_path = save_upload_to_tempfile(current_video)
                 print(f"[DEBUG] Current video saved to: {curr_path}")
             else:
-                curr_path = goal_path  # Use same video for current
-                print(
-                    f"[DEBUG] Using goal video as current video (frame {current_frame_idx})")
+                print(f"[DEBUG] Using goal video as current video")
 
             goal_img = extract_frame(goal_path, goal_frame_idx)
 

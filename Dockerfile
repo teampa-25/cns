@@ -1,6 +1,7 @@
 # Use CUDA 11.8 runtime base image with Ubuntu 22.04
 FROM nvidia/cuda:11.8.0-cudnn8-runtime-ubuntu22.04
 
+
 ENV DEBIAN_FRONTEND=noninteractive
 
 # Install python3.10, pip, git, build tools and dependencies
