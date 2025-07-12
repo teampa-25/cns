@@ -3,17 +3,10 @@ FastAPI server for CNS video analysis.
 Receives video files and performs velocity analysis using CNS pipeline.
 """
 
-import numpy as np
+
 import sys
 import os
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from utils.veryutils import create_zip_stream, convert_ndarray
-
-
-import uuid
-import numpy as np
 from enum import Enum
-import os
 import shutil
 import tempfile
 import traceback
@@ -24,11 +17,11 @@ from fastapi.responses import JSONResponse, StreamingResponse, StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
 import asyncio
-import sys
 import cv2
 from codecarbon import EmissionsTracker
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from cns_external_images import run_cns_with_external_images
+from utils.veryutils import create_zip_stream, convert_ndarray
 
 
 class DetectorEnum(str, Enum):
@@ -47,7 +40,7 @@ app = FastAPI(
 # Add CORS middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # In production, specify actual origins
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -66,18 +59,30 @@ def save_upload_to_tempfile(upload_file: UploadFile) -> str:
     except Exception as e:
         raise HTTPException(
             status_code=500, detail=f"Error saving uploaded file: {str(e)}")
+        
 
+def get_total_frames(video_path: str) -> int:
+    cap = cv2.VideoCapture(video_path)
+    if not cap.isOpened():
+        raise HTTPException(
+            status_code=400, detail=f"Cannot open video file: {video_path}")
+    total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+    cap.release()
+    return total_frames
+   
 
 def extract_frame(video_path: str, frame_idx: int):
     """Extract a specific frame from a video file."""
     cap = None
     try:
+        # Open video
         cap = cv2.VideoCapture(video_path)
         if not cap.isOpened():
             raise HTTPException(
-                status_code=400, detail=f"Cannot open video file: {video_path}")
+                status_code=400,
+                detail=f"Cannot open video file: {video_path}"
+            )
 
-        # Get total frame count for validation
         total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
         if frame_idx >= total_frames:
             raise HTTPException(
@@ -119,7 +124,7 @@ async def analyze(
     goal_frame_idx: int = Form(0, ge=0, description="Frame index to extract from goal video"),
     frame_step: int = Form(1, ge=1, description="Sampling rate for processing"),
     start_frame: int = Form(0, ge=0, description="Frame to start the process"),
-    end_frame: int = Form(0, ge=100, description="Frame to finish the process")
+    end_frame: int = Form(0, ge=1, description="Frame to finish the process")
 ):
     """
     Analyze video frames using CNS pipeline.
@@ -133,7 +138,7 @@ async def analyze(
         goal_frame_idx: Frame index for goal video (default: 0)
         frame_step: Sampling rate for processing (default: 1)
         start_frame: Frame to start the process (default: 0)
-        end_frame: Frame to finish the process (default: 100)
+        end_frame: Frame to finish the process (default: 0)
 
     Returns:
         JSON response with velocity and carbon footprint data
@@ -179,6 +184,20 @@ async def analyze(
                         status_code=400,
                         detail=f"Unsupported file format: {curr_ext}. Supported formats: {allowed_extension}"
                     )
+            
+            current_total_frames = get_total_frames(current_video)
+                    
+            if start_frame >= end_frame:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"'start_frame' ({start_frame}) must be less than 'end_frame' ({end_frame})"
+                )
+
+            if end_frame > current_total_frames:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"'end_frame' ({end_frame}) exceeds video frame count for current video ({current_total_frames})"
+                )
 
             print(f"[INFO] Processing request ID: {jobId}")
             print(f"[INFO] Goal video: {goal_video.filename} (frame {goal_frame_idx})")

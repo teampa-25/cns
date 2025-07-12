@@ -5,10 +5,8 @@ Utility functions for creating ZIP archives of output images.
 import os
 import zipfile
 from pathlib import Path
-from typing import Optional, List
 import io
 import shutil
-
 import numpy as np
 
 

@@ -2,7 +2,6 @@ import torch
 import numpy as np
 import cv2
 import os
-import json
 from cns.utils.perception import CameraIntrinsic
 from cns.benchmark.pipeline import CorrespondenceBasedPipeline, VisOpt
 
@@ -90,7 +89,7 @@ def run_cns_with_external_images(goal_image_path=None, current_image_path=None, 
         print("="*60)
         if data is not None:
             print(f"[SUCCESS] Pipeline execution successful")
-            print(f"[INFO] Velocity output shape: {vel.shape if hasattr(vel, 'shape') else type(vel)}")
+            #print(f"[INFO] Velocity output shape: {vel.shape if hasattr(vel, 'shape') else type(vel)}")
             #print(f"[INFO] Velocity values: {vel}")
             #print(f"[INFO] Timing information: {timing}")
             #if hasattr(data, 'keys'):
@@ -126,68 +125,3 @@ def run_cns_with_external_images(goal_image_path=None, current_image_path=None, 
         print(f"[ERROR] Unexpected error: {e}")
         # return None, None, None
         return None
-
-
-def analyze_correspondence(goal_image_path="dataset_small/comandovitruviano.jpeg", 
-                          current_image_path="dataset_small/curr3.jpeg"):
-    """
-    Analyze correspondence between two images using CNS frontend only.
-    This function focuses on feature detection and matching.
-    """
-    set_seed()
-    
-    # Initialize pipeline
-    pipeline = CorrespondenceBasedPipeline(
-        detector="AKAZE",
-        ckpt_path="checkpoints/cns_state_dict.pth",
-        intrinsic=CameraIntrinsic.default(),
-        device="cuda:0" if torch.cuda.is_available() else "cpu",
-        ransac=True,
-        vis=VisOpt.ALL
-    )
-    
-    try:
-        # Load images
-        goal_img = load_image(goal_image_path)
-        current_img = load_image(current_image_path)
-        
-        print(f"[INFO] Analyzing correspondence between:")
-        print(f"  Goal: {goal_image_path}")
-        print(f"  Current: {current_image_path}")
-        
-        # Set target
-        pipeline.set_target(goal_img, dist_scale=1.0)
-        
-        # Get frontend analysis
-        vel, data, timing = pipeline.get_control_rate(current_img)
-        
-        if data is not None:
-            print(f"[SUCCESS] Found correspondences between images")
-            if hasattr(data, 'keys'):
-                for key in data.keys():
-                    print(f"  {key}: {type(data[key])}")
-        else:
-            print(f"[WARNING] No correspondences found between images")
-            
-        return data
-        
-    except Exception as e:
-        print(f"[ERROR] Analysis failed: {e}")
-        return None
-
-
-if __name__ == "__main__":
-    print("CNS External Images Interface")
-    print("============================")
-    
-    # Run main processing
-    vel, data, timing = run_cns_with_external_images()
-    
-    print("\n" + "-"*60)
-    print("Additional Analysis")
-    print("-"*60)
-    
-    # Run correspondence analysis
-    correspondence_data = analyze_correspondence()
-    
-    print("\n[INFO] Processing complete!")
