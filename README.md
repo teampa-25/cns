@@ -1,7 +1,7 @@
 
 # FastCNS: not your ordinary API
 <div align="center">
-  <img width="200" height="200" alt="CNS Banner" src="https://github.com/user-attachments/assets/b0dad17b-9bde-474a-817a-c9062f2aa987" />
+  <img width="220" height="240" alt="CNS Banner" src="https://github.com/user-attachments/assets/b0dad17b-9bde-474a-817a-c9062f2aa987" />
 </div>
 
 ## Overview
@@ -10,7 +10,6 @@ A modular, GPU-accelerated system developed ad-hoc for visual servoing. It provi
 ## Features
 - **FastAPI server** for easy integration and RESTful access
 - **GPU acceleration** (CUDA, PyTorch, Torch Geometric, OpenCV)
-- **Pluggable pipelines** for correspondence-based and image-based visual servoing
 - **Automatic carbon footprint tracking** (via CodeCarbon)
 - **Rich visualization**: keypoints, matches, graphs, and more
 - **Dockerized**: run anywhere, reproducible environments
@@ -20,12 +19,12 @@ A modular, GPU-accelerated system developed ad-hoc for visual servoing. It provi
 ## Quick Start
 1. **Build the Docker Image**
    ```sh
-   docker build -t cns-gpu .
+   docker build -t cns-powa .
    ```
 2. **Run the Container** (with GPU, volume, and port mapping)
    ```powershell
    $repoPath = (Get-Location).Path
-   docker run --gpus all -it -v "${repoPath}:/workspace" --workdir /workspace -p 8000:8000 cns-gpu
+   docker run --gpus all -it -v "${repoPath}:/workspace" --workdir /workspace -p 8000:8000 cns-powa
    ```
 3. **Start the API Server**
    Inside the container (with the correct venv activated):
@@ -91,11 +90,16 @@ All dependencies are managed via Docker and `requirements.txt`.
 
 ## Troubleshooting
 
-- If `torch.cuda.is_available()` is `False`, check:
-  - Docker run command includes `--gpus all`
-  - Host drivers and NVIDIA Container Toolkit are up to date
-  - The correct torch version is installed for your CUDA version
-- For OpenCV errors, ensure you always pass file paths (not UploadFile objects) to OpenCV functions.
+Hey mate, If `torch.cuda.is_available()` is `False` do not let the fear take control over your terminal!
+
+If you have a GPU, there are two reason for this:
+  - You have installed the wrong torch version, then it's your fault... yep, sorry mate but that's true.
+
+  - Well... the not really funny thing is that CNS's GNN needs checkpoints made with the correct version of CUDA drivers on a Nvidia GPU that use those drivers. 
+
+In the second case, you must retrain the network with your own drivers using the 'train_cns.py' script.
+Or... use the CPU, with ORB detector the system run really well on a machine with Intel i9 9900k at 5GHz and 32GB RAM.
+
 
 ## License
 
@@ -104,5 +108,4 @@ See [LICENSE](LICENSE) for details.
 
 ## Authors
 
-TeamPA-25  
-[Your Name or Organization]
+TeamPA-25
