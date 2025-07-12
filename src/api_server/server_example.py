@@ -3,6 +3,13 @@ FastAPI server for CNS video analysis.
 Receives video files and performs velocity analysis using CNS pipeline.
 """
 
+import numpy as np
+import sys
+import os
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from utils.veryutils import create_zip_stream, convert_ndarray
+
+
 import uuid
 import numpy as np
 from enum import Enum
@@ -10,9 +17,10 @@ import os
 import shutil
 import tempfile
 import traceback
+import io
 from typing import Optional
 from fastapi import FastAPI, File, UploadFile, HTTPException, Query, Form
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, StreamingResponse, StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
 import asyncio
@@ -21,23 +29,6 @@ import cv2
 from codecarbon import EmissionsTracker
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from cns_external_images import run_cns_with_external_images
-
-
-"""
-Utility to recursively convert all numpy ndarrays to lists
-Placed at module level to avoid UnboundLocalError.
-"""
-def convert_ndarray(obj):
-    if isinstance(obj, np.ndarray):
-        return obj.tolist()
-    elif isinstance(obj, dict):
-        return {k: convert_ndarray(v) for k, v in obj.items()}
-    elif isinstance(obj, list):
-        return [convert_ndarray(i) for i in obj]
-    elif isinstance(obj, tuple):
-        return tuple(convert_ndarray(i) for i in obj)
-    else:
-        return obj
 
 
 class DetectorEnum(str, Enum):
@@ -152,9 +143,7 @@ async def analyze(
 
         # Initialize emissions tracker
         tracker = EmissionsTracker(
-            save_to_file = True,
-            output_dir = "emissions",
-            output_file=f"{jobId}.json"
+            save_to_file = False
         )
         tracker_started = False
         try:
@@ -282,8 +271,58 @@ async def analyze(
                     print(f"[WARNING] Failed to clean up {file_path}: {str(e)}")
                     
             response_data_clean = convert_ndarray(response_data)
-            print(f"[DEBUG] Response data after conversion: {type(response_data_clean)}")       
+            print(f"[DEBUG] Response data after conversion: {type(response_data_clean)}")
+            
+            # Add download link for images
+            response_data_clean.append({
+                "download_url": f"/download/{jobId}",
+                "message": "Use this URL to download the generated visualization images as a ZIP file"
+            })
+            
             return JSONResponse(content=response_data_clean)
+
+
+@app.get("/download/{request_id}")
+async def download_images(request_id: str):
+    """
+    Download visualization images for a specific request as a ZIP file.
+    
+    Args:
+        request_id: The request ID to download images for
+        
+    Returns:
+        StreamingResponse: ZIP file containing all visualization images
+    """
+    try:
+        # Create ZIP archive in memory and clean up files
+        zip_bytes = create_zip_stream(request_id, cleanup_after=True)
+        
+        # Create BytesIO buffer and return as streaming response
+        zip_buffer = io.BytesIO(zip_bytes)
+        zip_buffer.seek(0)
+        
+        return StreamingResponse(
+            zip_buffer,
+            media_type="application/zip",
+            headers={"Content-Disposition": f"attachment; filename={request_id}_images.zip"}
+        )
+        
+    except FileNotFoundError:
+        raise HTTPException(
+            status_code=404, 
+            detail=f"No images found for request ID: {request_id}"
+        )
+    except ValueError as e:
+        raise HTTPException(
+            status_code=404, 
+            detail=str(e)
+        )
+    except Exception as e:
+        print(f"[ERROR] Error creating ZIP download: {str(e)}")
+        raise HTTPException(
+            status_code=500, 
+            detail=f"Internal server error: {str(e)}"
+        )
 
 
 @app.exception_handler(HTTPException)
@@ -310,6 +349,13 @@ async def general_exception_handler(request, exc):
             "status_code": 500
         }
     )
+    
+
+
+
+
+
+
 
 if __name__ == "__main__":
     uvicorn.run(
