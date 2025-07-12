@@ -1,3 +1,19 @@
+import numpy as np
+"""
+Utility to recursively convert all numpy ndarrays to lists
+Placed at module level to avoid UnboundLocalError.
+"""
+def convert_ndarray(obj):
+    if isinstance(obj, np.ndarray):
+        return obj.tolist()
+    elif isinstance(obj, dict):
+        return {k: convert_ndarray(v) for k, v in obj.items()}
+    elif isinstance(obj, list):
+        return [convert_ndarray(i) for i in obj]
+    elif isinstance(obj, tuple):
+        return tuple(convert_ndarray(i) for i in obj)
+    else:
+        return obj
 
 """
 FastAPI server for CNS video analysis.
@@ -130,9 +146,15 @@ async def analyze(
         JSON response with velocity and carbon footprint data
     """
 
+
     # Initialize emissions tracker
     tracker = EmissionsTracker()
-    tracker.start()
+    tracker_started = False
+    try:
+        tracker.start()
+        tracker_started = True
+    except Exception as e:
+        print(f"[WARNING] Could not start EmissionsTracker: {e}")
 
     goal_path = None
     curr_path = None
@@ -205,22 +227,20 @@ async def analyze(
                 raise HTTPException(
                     status_code=500, detail="CNS pipeline failed to produce results")
 
+            # Convert velocity to list format for JSON serialization
+            velocity = convert_ndarray(vel)
             response_data.append({
-                "velocity": vel.tolist() if hasattr(vel, "tolist") else vel,
+                "velocity": velocity,
             })
 
-        # Stop emissions tracking
-        emissions = tracker.stop()
-        print(f"[INFO] Analysis completed. Emissions: {emissions}")
-
-        # Prepare response
-        response_data.append({
-            "request_id": id,
-            "carbon_footprint": emissions
-        })
-
+        # Prepare response (emissions will be added in finally)
         print(f"[INFO] Request {id} completed successfully")
-        return JSONResponse(content=response_data)
+        
+        # Convert all numpy arrays to lists before returning
+        response_data_clean = convert_ndarray(response_data)
+        print(f"[DEBUG] Response data after conversion: {type(response_data_clean)}")
+        
+        return JSONResponse(content=response_data_clean)
 
     except HTTPException:
         # Re-raise HTTP exceptions
@@ -232,6 +252,20 @@ async def analyze(
             status_code=500, detail=f"Internal server error: {str(e)}")
 
     finally:
+        # Stop emissions tracking if started
+        emissions = None
+        if 'tracker' in locals() and tracker_started:
+            try:
+                emissions = tracker.stop()
+                print(f"[INFO] Emissions tracking stopped. Emissions: {emissions}")
+            except Exception as e:
+                print(f"[WARNING] Could not stop EmissionsTracker: {e}")
+        # Add emissions info to response if available
+        if emissions is not None:
+            response_data.append({
+                "request_id": id,
+                "carbon_footprint": convert_ndarray(emissions)
+            })
         # Clean up temporary files
         cleanup_files = []
         if goal_path and os.path.exists(goal_path):
@@ -275,6 +309,6 @@ async def general_exception_handler(request, exc):
 if __name__ == "__main__":
     uvicorn.run(
         app,
-        host="localhost",
+        host="0.0.0.0",
         port="8000",
     )

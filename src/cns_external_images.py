@@ -61,7 +61,7 @@ def run_cns_with_external_images(goal_image_path=None, current_image_path=None, 
 
     pipeline = CorrespondenceBasedPipeline(
         detector=detector,
-        ckpt_path="../checkpoints/cns_state_dict.pth",
+        ckpt_path="./checkpoints/cns_state_dict.pth",
         intrinsic=CameraIntrinsic.default(),
         device=device,
         ransac=True,
@@ -118,13 +118,17 @@ def run_cns_with_external_images(goal_image_path=None, current_image_path=None, 
             print("- Images too different for correspondence")
             print("- Pipeline configuration issue")
         print("="*60)
-        return vel, data, timing
+        # return vel, data, timing
+        return vel
+    
     except FileNotFoundError as e:
         print(f"[ERROR] {e}")
-        return None, None, None
+        # return None, None, None
+        return None    
     except Exception as e:
         print(f"[ERROR] Unexpected error: {e}")
-        return None, None, None
+        # return None, None, None
+        return None
 
 
 def analyze_correspondence(goal_image_path="dataset_small/comandovitruviano.jpeg", 
