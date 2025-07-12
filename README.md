@@ -29,7 +29,7 @@ A modular, GPU-accelerated system developed ad-hoc for visual servoing. It provi
 3. **Start the API Server**
    Inside the container (with the correct venv activated):
    ```sh
-   python src/api_server/cns_server.py --device cuda:0
+   python src/api_server/cns_server.py
    ```
 
 ## API Usage
