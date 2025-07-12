@@ -4,8 +4,6 @@ FastAPI server for CNS video analysis.
 Receives video files and performs velocity analysis using CNS pipeline.
 """
 
-
-from cns_external_images import run_cns_with_external_images
 from enum import Enum
 import os
 import shutil
@@ -21,6 +19,7 @@ import sys
 import cv2
 from codecarbon import EmissionsTracker
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from cns_external_images import run_cns_with_external_images
 
 
 class DetectorEnum(str, Enum):
