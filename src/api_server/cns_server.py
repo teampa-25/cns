@@ -22,7 +22,16 @@ from codecarbon import EmissionsTracker
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from cns_external_images import run_cns_with_external_images
 from utils.veryutils import create_zip_stream, convert_ndarray
+from pydantic import BaseModel
+from typing import List
 
+class CNSResponseModel(BaseModel):
+    request_id: str
+    velocity: List[List[float]]
+    carbon_footprint: float
+    download_url: str
+    message: str
+    
 
 class DetectorEnum(str, Enum):
     akaze = "AKAZE"
@@ -114,7 +123,7 @@ def extract_frame(video_path: str, frame_idx: int):
             cap.release()
             
 
-@app.post("/analyze")
+@app.post("/analyze", response_model=CNSResponseModel)
 async def analyze(
     jobId: str = Form("untitled", description="Job identifier from Bull"),
     device: str = Form("cuda:0", description="Device to run CNS on: 'cuda:0' or 'cpu'"),
@@ -293,16 +302,18 @@ async def analyze(
                 except Exception as e:
                     print(f"[WARNING] Failed to clean up {file_path}: {str(e)}")
                     
-            response_data_clean = convert_ndarray(response_data)
-            print(f"[DEBUG] Response data after conversion: {type(response_data_clean)}")
-            
-            # Add download link for images
-            response_data_clean.append({
+            velocities = [item["velocity"]
+                          for item in response_data if "velocity" in item]
+
+            structured_response = {
+                "requestId": jobId,
+                "velocity": velocities,
+                "carbon_footprint": round(float(emissions), 6) if emissions else 0,
                 "download_url": f"/download/{jobId}",
                 "message": "Use this URL to download the generated visualization images as a ZIP file"
-            })
-            
-            return JSONResponse(content=response_data_clean)
+            }
+
+            return JSONResponse(content=structured_response)
 
 
 @app.get("/download/{request_id}")
