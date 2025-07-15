@@ -122,6 +122,15 @@ def extract_frame(video_path: str, frame_idx: int):
         if cap is not None:
             cap.release()
             
+            
+@app.get("/health")
+async def health():
+    """Health check endpoint."""
+    return JSONResponse({
+        "status": "ok",
+        "message": "CNS server is running"
+    })
+            
 
 @app.post("/analyze", response_model=CNSResponseModel)
 async def analyze(
