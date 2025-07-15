@@ -8,4 +8,4 @@ $repoPath = (Get-Location).Path
 # docker run --gpus all -it --runtime=nvidia -v "${repoPath}:/workspace" --workdir /workspace -p 8000:8000 humongous-cns bash -c "apt update && apt install -y dos2unix && dos2unix src/CNS_venv/bin/activate && source src/CNS_venv/bin/activate && bash"
 
 # sotto il comando precedente
-docker run --gpus all -it -v "${repoPath}:/workspace" --name humongous-cns-container --workdir /workspace -p 8000:8000 humongous-cns bash -c "apt update && apt install -y dos2unix && dos2unix src/CNS_venv/bin/activate && source src/CNS_venv/bin/activate && bash"
+docker run --gpus all -it -v "${repoPath}:/workspace" --name cns-powa --workdir /workspace -p 8000:8000 cns-powa bash -c "apt update && apt install -y dos2unix && dos2unix src/CNS_venv/bin/activate && source src/CNS_venv/bin/activate && bash"
